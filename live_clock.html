@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Now</title>
+<style>
+  :root{
+    /* token palette — shifts by time-of-day phase via JS */
+    --ink: #f4ede4;
+    --ink-dim: #f4ede4a0;
+    --bg-1: #0b1023;
+    --bg-2: #1a1f3d;
+    --accent: #ffb454;
+    --accent-2: #7ec8e3;
+    --line: rgba(244,237,228,0.14);
+    transition: background 1.2s ease;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    height:100%;
+    background: radial-gradient(circle at 50% 20%, var(--bg-2), var(--bg-1) 70%);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    transition: background 1.2s ease;
+  }
+
+  @font-face{
+    font-family:'Sono';
+    src: local('JetBrains Mono'), local('Menlo'), local('Consolas');
+  }
+
+  .stage{
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 1.4rem;
+    padding: 2rem;
+    position:relative;
+  }
+
+  .eyebrow{
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    font-weight: 600;
+  }
+
+  .clock{
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-weight: 600;
+    font-size: clamp(3.2rem, 13vw, 7.5rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    display:flex;
+    align-items:baseline;
+    gap: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .clock .sec{
+    font-size: 0.42em;
+    color: var(--accent);
+    opacity: 0.9;
+    min-width: 1.6ch;
+    display:inline-block;
+  }
+
+  .meridiem{
+    font-size: 0.28em;
+    color: var(--ink-dim);
+    margin-left: 0.15em;
+    align-self: flex-start;
+    margin-top: 0.3em;
+    letter-spacing: 0.08em;
+  }
+
+  .date-row{
+    font-size: clamp(0.95rem, 2vw, 1.15rem);
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+    text-align:center;
+  }
+
+  .greeting{
+    font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  /* the signature element: an arc that traces the day's progress,
+     like a sundial reading the hours as they pass */
+  .day-arc-wrap{
+    width: min(78vw, 420px);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+
+  svg.arc{ width:100%; height:auto; display:block; }
+
+  .arc-track{
+    fill:none;
+    stroke: var(--line);
+    stroke-width: 3;
+  }
+
+  .arc-fill{
+    fill:none;
+    stroke: url(#gradArc);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear;
+  }
+
+  .arc-labels{
+    display:flex;
+    justify-content:space-between;
+    width:100%;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .tz{
+    position:absolute;
+    bottom: 1.4rem;
+    right: 1.6rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+  }
+
+  .toggle{
+    position:absolute;
+    top: 1.4rem;
+    right: 1.6rem;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .toggle:hover{ color: var(--ink); border-color: var(--ink-dim); }
+  .toggle:focus-visible{ outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+  @media (max-width: 480px){
+    .tz{ position:static; margin-top: 0.4rem; }
+    .toggle{ top: 1rem; right: 1rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <button class="toggle" id="fmtToggle" aria-label="Toggle 12/24 hour format">24H</button>
+
+  <div class="eyebrow" id="phaseLabel">—</div>
+
+  <div class="clock" id="clock" aria-live="polite">
+    <span id="hh">00</span><span>:</span><span id="mm">00</span><span class="sec" id="ss">00</span><span class="meridiem" id="meridiem"></span>
+  </div>
+
+  <div class="greeting" id="greeting">Good day.</div>
+  <div class="date-row" id="dateRow">—</div>
+
+  <div class="day-arc-wrap">
+    <svg class="arc" viewBox="0 0 300 40" aria-hidden="true">
+      <defs>
+        <linearGradient id="gradArc" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="var(--accent-2)"/>
+          <stop offset="100%" stop-color="var(--accent)"/>
+        </linearGradient>
+      </defs>
+      <path class="arc-track" d="M 10 30 Q 150 -10 290 30" />
+      <path class="arc-fill" id="arcFill" d="M 10 30 Q 150 -10 290 30" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/>
+    </svg>
+    <div class="arc-labels">
+      <span>Dawn</span>
+      <span id="dayPct">0% of day</span>
+      <span>Dusk</span>
+    </div>
+  </div>
+
+  <div class="tz" id="tzLabel">—</div>
+</div>
+
+<script>
+(function(){
+  var use12h = false;
+  var toggleBtn = document.getElementById('fmtToggle');
+  toggleBtn.addEventListener('click', function(){
+    use12h = !use12h;
+    toggleBtn.textContent = use12h ? '12H' : '24H';
+    tick();
+  });
+
+  // time-of-day phases, each with its own palette — the page's
+  // background quietly follows the sun rather than a fixed theme
+  var phases = [
+    { name: 'Night',   from: 0,  to: 5,  bg1:'#05070f', bg2:'#0d1130', accent:'#7ec8e3', accent2:'#4b5aa8', ink:'#e7e9f7' },
+    { name: 'Dawn',     from: 5,  to: 8,  bg1:'#1a1030', bg2:'#3a2050', accent:'#ffb454', accent2:'#ff7e7e', ink:'#fbeee4' },
+    { name: 'Morning',  from: 8,  to: 12, bg1:'#12213b', bg2:'#22406b', accent:'#ffd166', accent2:'#7ec8e3', ink:'#f4ede4' },
+    { name: 'Afternoon',from: 12, to: 17, bg1:'#0b1023', bg2:'#1a1f3d', accent:'#ffb454', accent2:'#7ec8e3', ink:'#f4ede4' },
+    { name: 'Dusk',     from: 17, to: 20, bg1:'#210f1f', bg2:'#4a1f3d', accent:'#ff8c5a', accent2:'#c65cad', ink:'#fbe7e4' },
+    { name: 'Night',    from: 20, to: 24, bg1:'#05070f', bg2:'#0d1130', accent:'#7ec8e3', accent2:'#4b5aa8', ink:'#e7e9f7' }
+  ];
+
+  function phaseFor(hour){
+    for (var i=0;i<phases.length;i++){
+      if (hour >= phases[i].from && hour < phases[i].to) return phases[i];
+    }
+    return phases[0];
+  }
+
+  var greetings = {
+    Night: 'Quiet hours.',
+    Dawn: 'The day is just beginning.',
+    Morning: 'Good morning.',
+    Afternoon: 'Good afternoon.',
+    Dusk: 'Evening is settling in.'
+  };
+
+  var root = document.documentElement.style;
+  var arcFill = document.getElementById('arcFill');
+  var lastPhaseName = null;
+
+  function applyPhase(hour){
+    var p = phaseFor(hour);
+    root.setProperty('--bg-1', p.bg1);
+    root.setProperty('--bg-2', p.bg2);
+    root.setProperty('--accent', p.accent);
+    root.setProperty('--accent-2', p.accent2);
+    root.setProperty('--ink', p.ink);
+    document.getElementById('phaseLabel').textContent = p.name;
+    document.getElementById('greeting').textContent = greetings[p.name] || 'Hello.';
+  }
+
+  function pad(n){ return n < 10 ? '0'+n : ''+n; }
+
+  function tick(){
+    var now = new Date();
+    var h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+
+    applyPhase(h);
+
+    var displayH = h;
+    var meridiem = '';
+    if (use12h){
+      meridiem = h >= 12 ? 'PM' : 'AM';
+      displayH = h % 12;
+      if (displayH === 0) displayH = 12;
+    }
+
+    document.getElementById('hh').textContent = pad(displayH);
+    document.getElementById('mm').textContent = pad(m);
+    document.getElementById('ss').textContent = pad(s);
+    document.getElementById('meridiem').textContent = meridiem;
+
+    var dateStr = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    document.getElementById('dateRow').textContent = dateStr;
+
+    var tzName = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    var offsetMin = -now.getTimezoneOffset();
+    var offsetStr = 'UTC' + (offsetMin >= 0 ? '+' : '') + (offsetMin/60);
+    document.getElementById('tzLabel').textContent = tzName + ' · ' + offsetStr;
+
+    // day progress: seconds elapsed since local midnight / seconds in a day
+    var secondsToday = h*3600 + m*60 + s;
+    var pct = secondsToday / 86400;
+    var dashOffset = 100 - (pct * 100);
+    arcFill.setAttribute('stroke-dashoffset', dashOffset.toFixed(2));
+    document.getElementById('dayPct').textContent = Math.round(pct*100) + '% of day';
+  }
+
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
+
+</body>
+</html>
